@@ -20,7 +20,13 @@ type AvaliacaoDto = z.infer<typeof registrarAvaliacaoSchema>;
 
 export const agendamentosService = {
   async criar(data: CriarDto) {
-    return prisma.agendamento.create({ data });
+    const { aberturaEm, ...rest } = data;
+    return prisma.agendamento.create({
+      data: {
+        ...rest,
+        ...(aberturaEm && { aberturaEm: new Date(aberturaEm) }),
+      },
+    });
   },
 
   async atualizarStatus(id: string, data: StatusDto) {

@@ -61,7 +61,6 @@ export const relatoriosService = {
       INNER JOIN "ItemServico" i  ON i.agendamentoId = a.id
       INNER JOIN "Funcionario" f  ON f.id  = i.funcionarioId
       GROUP BY f.id, f.nome, f.cargo
-      HAVING COUNT(av.id) >= 5
       ORDER BY nota_media DESC
     `;
   },

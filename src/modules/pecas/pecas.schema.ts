@@ -8,3 +8,5 @@ export const criarPecaSchema = z.object({
   quantidade_minima: z.number().int().min(0),
   fornecedor: z.string().optional(),
 });
+
+export const atualizarPecaSchema = criarPecaSchema.partial();

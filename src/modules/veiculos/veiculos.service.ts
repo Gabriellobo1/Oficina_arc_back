@@ -18,6 +18,13 @@ export const veiculosService = {
     }
   },
 
+  async listarPorCliente(clienteId: string) {
+    return prisma.veiculo.findMany({
+      where: { clienteId },
+      orderBy: { criadoEm: "desc" },
+    });
+  },
+
   async buscarPorPlaca(placa: string) {
     const veiculo = await prisma.veiculo.findUnique({
       where: { placa: placa.toUpperCase() },

@@ -1,5 +1,5 @@
 import { FastifyRequest, FastifyReply } from "fastify";
-import { criarFuncionarioSchema } from "./funcionarios.schema";
+import { criarFuncionarioSchema, atualizarFuncionarioSchema } from "./funcionarios.schema";
 import { funcionariosService } from "./funcionarios.service";
 
 export const funcionariosController = {
@@ -14,5 +14,10 @@ export const funcionariosController = {
 
   async buscarPorId(req: FastifyRequest<{ Params: { id: string } }>, reply: FastifyReply) {
     return reply.send(await funcionariosService.buscarPorId(req.params.id));
+  },
+
+  async atualizar(req: FastifyRequest<{ Params: { id: string } }>, reply: FastifyReply) {
+    const data = atualizarFuncionarioSchema.parse(req.body);
+    return reply.send(await funcionariosService.atualizar(req.params.id, data));
   },
 };

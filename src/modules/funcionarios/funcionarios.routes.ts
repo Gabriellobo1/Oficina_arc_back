@@ -1,10 +1,13 @@
 import { FastifyInstance } from "fastify";
 import { funcionariosController } from "./funcionarios.controller";
-import { authorizeGerente } from "../../middlewares/auth.middleware";
+import { authenticate, authorizeGerente } from "../../middlewares/auth.middleware";
 
 export async function funcionariosRoutes(app: FastifyInstance) {
-  app.addHook("preHandler", authorizeGerente);
-  app.post("/", funcionariosController.criar);
-  app.get("/", funcionariosController.listar);
-  app.get("/:id", funcionariosController.buscarPorId);
+  // Leitura acessível por qualquer usuário autenticado (ServicesTab precisa listar funcionários)
+  app.get("/", { preHandler: [authenticate] }, funcionariosController.listar);
+  app.get("/:id", { preHandler: [authenticate] }, funcionariosController.buscarPorId);
+
+  // Escrita restrita ao Gerente
+  app.post("/", { preHandler: [authorizeGerente] }, funcionariosController.criar);
+  app.put("/:id", { preHandler: [authorizeGerente] }, funcionariosController.atualizar);
 }

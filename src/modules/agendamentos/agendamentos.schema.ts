@@ -2,7 +2,8 @@ import { z } from "zod";
 
 export const criarAgendamentoSchema = z.object({
   veiculoId: z.string().uuid(),
-  km_entrada: z.number().int().positive(),
+  km_entrada: z.number().int().min(0),
+  aberturaEm: z.string().datetime({ offset: true }).optional(),
   observacoes: z.string().optional(),
 });
 

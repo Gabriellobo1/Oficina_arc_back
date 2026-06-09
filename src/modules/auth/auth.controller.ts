@@ -8,7 +8,12 @@ export const authController = {
     const payload = await authService.login(email, senha);
     const token = await reply.jwtSign(payload);
     const refresh = await reply.jwtSign(payload, { expiresIn: "30d" });
-    return reply.status(200).send({ token, refresh, perfil: payload.perfil });
+    return reply.status(200).send({ token, refresh, usuario: payload });
+  },
+
+  async me(req: FastifyRequest, reply: FastifyReply) {
+    await req.jwtVerify();
+    return reply.send({ id: req.user.id, email: req.user.email, perfil: req.user.perfil });
   },
 
   async refresh(req: FastifyRequest, reply: FastifyReply) {

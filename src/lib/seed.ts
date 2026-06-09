@@ -57,14 +57,8 @@ async function main() {
   ];
 
   for (const peca of pecas) {
-    await prisma.peca.upsert({
-      where: { id: peca.nome },
-      update: {},
-      create: peca,
-    }).catch(async () => {
-      const existente = await prisma.peca.findFirst({ where: { nome: peca.nome } });
-      if (!existente) await prisma.peca.create({ data: peca });
-    });
+    const existente = await prisma.peca.findFirst({ where: { nome: peca.nome } });
+    if (!existente) await prisma.peca.create({ data: peca });
   }
 
   console.log("Seed concluído.");

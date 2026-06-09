@@ -5,5 +5,6 @@ import { authenticate } from "../../middlewares/auth.middleware";
 export async function veiculosRoutes(app: FastifyInstance) {
   app.addHook("preHandler", authenticate);
   app.post("/", veiculosController.criar);
+  app.get("/", veiculosController.listarPorCliente);
   app.get("/:placa", veiculosController.buscarPorPlaca);
 }

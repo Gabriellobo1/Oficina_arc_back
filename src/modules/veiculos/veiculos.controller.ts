@@ -8,6 +8,14 @@ export const veiculosController = {
     return reply.status(201).send(await veiculosService.criar(data));
   },
 
+  async listarPorCliente(
+    req: FastifyRequest<{ Querystring: { clienteId: string } }>,
+    reply: FastifyReply
+  ) {
+    const { clienteId } = req.query;
+    return reply.send(await veiculosService.listarPorCliente(clienteId));
+  },
+
   async buscarPorPlaca(req: FastifyRequest<{ Params: { placa: string } }>, reply: FastifyReply) {
     return reply.send(await veiculosService.buscarPorPlaca(req.params.placa));
   },

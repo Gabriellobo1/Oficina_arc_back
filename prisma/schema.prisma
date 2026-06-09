@@ -48,6 +48,9 @@ model Funcionario {
   cargo         String
   especialidade String?
   salario       Decimal
+  telefone      String?
+  data_admissao DateTime?
+  ativo         Boolean       @default(true)
   usuarioId     String?       @unique
   usuario       Usuario?      @relation(fields: [usuarioId], references: [id])
   itensServico  ItemServico[]
