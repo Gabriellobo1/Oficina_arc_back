@@ -1,26 +1,20 @@
-import { prisma } from "./prisma";
 import bcrypt from "bcryptjs";
+import { pool } from "./db";
 
 async function main() {
-  await prisma.usuario.upsert({
-    where: { email: "gerente@oficina.com" },
-    update: {},
-    create: {
-      email: "gerente@oficina.com",
-      senha_hash: await bcrypt.hash("admin123", 10),
-      perfil: "GERENTE",
-    },
-  });
+  await pool.query(
+    `INSERT INTO "Usuario" (email, senha_hash, perfil)
+     VALUES ($1, $2, $3)
+     ON CONFLICT (email) DO NOTHING`,
+    ["gerente@oficina.com", await bcrypt.hash("admin123", 10), "GERENTE"]
+  );
 
-  await prisma.usuario.upsert({
-    where: { email: "atendente@oficina.com" },
-    update: {},
-    create: {
-      email: "atendente@oficina.com",
-      senha_hash: await bcrypt.hash("atend123", 10),
-      perfil: "ATENDENTE",
-    },
-  });
+  await pool.query(
+    `INSERT INTO "Usuario" (email, senha_hash, perfil)
+     VALUES ($1, $2, $3)
+     ON CONFLICT (email) DO NOTHING`,
+    ["atendente@oficina.com", await bcrypt.hash("atend123", 10), "ATENDENTE"]
+  );
 
   const tiposServico = [
     { nome: "Troca de óleo", descricao: "Troca de óleo do motor e filtro", preco_base: 120.0, tempo_estimado: 30 },
@@ -36,11 +30,12 @@ async function main() {
   ];
 
   for (const tipo of tiposServico) {
-    await prisma.tipoServico.upsert({
-      where: { nome: tipo.nome },
-      update: {},
-      create: tipo,
-    });
+    await pool.query(
+      `INSERT INTO "TipoServico" (nome, descricao, preco_base, tempo_estimado)
+       VALUES ($1, $2, $3, $4)
+       ON CONFLICT (nome) DO NOTHING`,
+      [tipo.nome, tipo.descricao, tipo.preco_base, tipo.tempo_estimado]
+    );
   }
 
   const pecas = [
@@ -57,8 +52,12 @@ async function main() {
   ];
 
   for (const peca of pecas) {
-    const existente = await prisma.peca.findFirst({ where: { nome: peca.nome } });
-    if (!existente) await prisma.peca.create({ data: peca });
+    await pool.query(
+      `INSERT INTO "Peca" (nome, preco_unitario, quantidade, quantidade_minima, fornecedor)
+       SELECT $1, $2, $3, $4, $5
+       WHERE NOT EXISTS (SELECT 1 FROM "Peca" WHERE nome = $1)`,
+      [peca.nome, peca.preco_unitario, peca.quantidade, peca.quantidade_minima, peca.fornecedor]
+    );
   }
 
   console.log("Seed concluído.");
@@ -70,5 +69,8 @@ async function main() {
 }
 
 main()
-  .catch(console.error)
-  .finally(() => prisma.$disconnect());
+  .catch((error) => {
+    console.error(error);
+    process.exit(1);
+  })
+  .finally(() => pool.end());

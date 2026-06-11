@@ -1,17 +1,18 @@
-import { prisma } from "../../lib/prisma";
 import { AppError } from "../../lib/AppError";
-import { Prisma } from "@prisma/client";
+import { PG, isPgError } from "../../lib/db";
 import { z } from "zod";
-import { criarVeiculoSchema } from "./veiculos.schema";
+import { criarVeiculoSchema, atualizarVeiculoSchema } from "./veiculos.schema";
+import { veiculosRepository } from "./veiculos.repository";
 
 type CriarVeiculoDto = z.infer<typeof criarVeiculoSchema>;
+type AtualizarVeiculoDto = z.infer<typeof atualizarVeiculoSchema>;
 
 export const veiculosService = {
   async criar(data: CriarVeiculoDto) {
     try {
-      return await prisma.veiculo.create({ data });
+      return await veiculosRepository.criar(data);
     } catch (error) {
-      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
+      if (isPgError(error, PG.UNIQUE_VIOLATION)) {
         throw new AppError("Placa já cadastrada", 409);
       }
       throw error;
@@ -19,25 +20,46 @@ export const veiculosService = {
   },
 
   async listarPorCliente(clienteId: string) {
-    return prisma.veiculo.findMany({
-      where: { clienteId },
-      orderBy: { criadoEm: "desc" },
-    });
+    return veiculosRepository.listarPorCliente(clienteId);
+  },
+
+  async listarTodos() {
+    return veiculosRepository.listarTodos();
   },
 
   async buscarPorPlaca(placa: string) {
-    const veiculo = await prisma.veiculo.findUnique({
-      where: { placa: placa.toUpperCase() },
-      include: {
-        cliente: { select: { id: true, nome: true } },
-        agendamentos: {
-          orderBy: { criadoEm: "desc" },
-          take: 10,
-          select: { id: true, status: true, aberturaEm: true, km_entrada: true },
-        },
-      },
-    });
+    const veiculo = await veiculosRepository.buscarPorPlaca(placa.toUpperCase());
     if (!veiculo) throw new AppError("Veículo não encontrado", 404);
     return veiculo;
+  },
+
+  async atualizar(id: string, data: AtualizarVeiculoDto) {
+    try {
+      const veiculo = await veiculosRepository.atualizar(id, data);
+      if (!veiculo) throw new AppError("Veículo não encontrado", 404);
+      return veiculo;
+    } catch (error) {
+      if (error instanceof AppError) throw error;
+      if (isPgError(error, PG.UNIQUE_VIOLATION)) {
+        throw new AppError("Placa já cadastrada", 409);
+      }
+      throw error;
+    }
+  },
+
+  async remover(id: string) {
+    try {
+      const ok = await veiculosRepository.remover(id);
+      if (!ok) throw new AppError("Veículo não encontrado", 404);
+    } catch (error) {
+      if (error instanceof AppError) throw error;
+      if (isPgError(error, PG.FOREIGN_KEY_VIOLATION)) {
+        throw new AppError(
+          "Não é possível excluir: o veículo possui ordens de serviço vinculadas",
+          409
+        );
+      }
+      throw error;
+    }
   },
 };

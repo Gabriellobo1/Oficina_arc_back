@@ -1,8 +1,8 @@
-import { prisma } from "../../lib/prisma";
 import { AppError } from "../../lib/AppError";
-import { Prisma } from "@prisma/client";
+import { PG, isPgError } from "../../lib/db";
 import { z } from "zod";
 import { criarTipoServicoSchema, atualizarTipoServicoSchema } from "./tipo-servico.schema";
+import { tipoServicoRepository } from "./tipo-servico.repository";
 
 type CriarDto = z.infer<typeof criarTipoServicoSchema>;
 type AtualizarDto = z.infer<typeof atualizarTipoServicoSchema>;
@@ -10,9 +10,9 @@ type AtualizarDto = z.infer<typeof atualizarTipoServicoSchema>;
 export const tipoServicoService = {
   async criar(data: CriarDto) {
     try {
-      return await prisma.tipoServico.create({ data });
+      return await tipoServicoRepository.criar(data);
     } catch (error) {
-      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
+      if (isPgError(error, PG.UNIQUE_VIOLATION)) {
         throw new AppError("Já existe um serviço com esse nome", 409);
       }
       throw error;
@@ -20,11 +20,11 @@ export const tipoServicoService = {
   },
 
   async listar() {
-    return prisma.tipoServico.findMany({ orderBy: { nome: "asc" } });
+    return tipoServicoRepository.listar();
   },
 
   async buscarPorId(id: string) {
-    const tipoServico = await prisma.tipoServico.findUnique({ where: { id } });
+    const tipoServico = await tipoServicoRepository.buscarPorId(id);
     if (!tipoServico) throw new AppError("Tipo de serviço não encontrado", 404);
     return tipoServico;
   },
@@ -32,9 +32,9 @@ export const tipoServicoService = {
   async atualizar(id: string, data: AtualizarDto) {
     await this.buscarPorId(id);
     try {
-      return await prisma.tipoServico.update({ where: { id }, data });
+      return await tipoServicoRepository.atualizar(id, data);
     } catch (error) {
-      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
+      if (isPgError(error, PG.UNIQUE_VIOLATION)) {
         throw new AppError("Já existe um serviço com esse nome", 409);
       }
       throw error;
@@ -44,9 +44,9 @@ export const tipoServicoService = {
   async deletar(id: string) {
     await this.buscarPorId(id);
     try {
-      await prisma.tipoServico.delete({ where: { id } });
+      await tipoServicoRepository.deletar(id);
     } catch (error) {
-      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2003") {
+      if (isPgError(error, PG.FOREIGN_KEY_VIOLATION)) {
         throw new AppError("Serviço está vinculado a ordens de serviço e não pode ser removido", 409);
       }
       throw error;

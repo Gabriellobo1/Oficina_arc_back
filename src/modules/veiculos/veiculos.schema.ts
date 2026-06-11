@@ -8,3 +8,12 @@ export const criarVeiculoSchema = z.object({
   cor: z.string().optional(),
   clienteId: z.string().uuid(),
 });
+
+export const atualizarVeiculoSchema = z.object({
+  placa: z.string().min(7).max(8).toUpperCase().optional(),
+  marca: z.string().min(1).optional(),
+  modelo: z.string().min(1).optional(),
+  ano: z.number().int().min(1900).max(new Date().getFullYear() + 1).optional(),
+  cor: z.string().optional(),
+  clienteId: z.string().uuid().optional(),
+});

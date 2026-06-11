@@ -1,4 +1,4 @@
-import { prisma } from "../../lib/prisma";
+import { dashboardRepository } from "./dashboard.repository";
 
 export const dashboardService = {
   async obterKpis() {
@@ -14,51 +14,19 @@ export const dashboardService = {
       pagamentosMesAnterior,
       notaMedia,
       osRecentes,
-    ] = await prisma.$transaction([
-      prisma.cliente.count(),
-
-      prisma.agendamento.groupBy({
-        by: ["status"],
-        _count: { status: true },
-      }),
-
-      prisma.pagamento.aggregate({
-        where: { criadoEm: { gte: inicioMes } },
-        _sum: { valor_total: true },
-        _count: { id: true },
-      }),
-
-      prisma.pagamento.aggregate({
-        where: { criadoEm: { gte: inicioMesAnterior, lte: fimMesAnterior } },
-        _sum: { valor_total: true },
-      }),
-
-      prisma.avaliacao.aggregate({
-        _avg: { nota: true },
-      }),
-
-      prisma.agendamento.findMany({
-        take: 5,
-        orderBy: { criadoEm: "desc" },
-        include: {
-          veiculo: {
-            select: {
-              modelo: true,
-              marca: true,
-              cliente: { select: { nome: true } },
-            },
-          },
-          pagamento: { select: { valor_total: true } },
-        },
-      }),
+      pecasAbaixoMinimo,
+    ] = await Promise.all([
+      dashboardRepository.contarClientes(),
+      dashboardRepository.osPorStatus(),
+      dashboardRepository.somaPagamentos(inicioMes),
+      dashboardRepository.somaPagamentos(inicioMesAnterior, fimMesAnterior),
+      dashboardRepository.mediaNota(),
+      dashboardRepository.osRecentes(),
+      dashboardRepository.contarPecasAbaixoMinimo(),
     ]);
 
-    const pecasAbaixoMinimo = await prisma.$queryRaw<{ total: bigint }[]>`
-      SELECT COUNT(*) as total FROM "Peca" WHERE quantidade < quantidade_minima
-    `;
-
-    const receitaMes = Number(pagamentosMes._sum.valor_total ?? 0);
-    const receitaMesAnterior = Number(pagamentosMesAnterior._sum.valor_total ?? 0);
+    const receitaMes = Number(pagamentosMes.soma ?? 0);
+    const receitaMesAnterior = Number(pagamentosMesAnterior.soma ?? 0);
     const variacaoReceita =
       receitaMesAnterior > 0
         ? ((receitaMes - receitaMesAnterior) / receitaMesAnterior) * 100
@@ -66,7 +34,7 @@ export const dashboardService = {
 
     const statusMap: Record<string, number> = {};
     for (const s of osPorStatus) {
-      statusMap[s.status] = s._count.status;
+      statusMap[s.status] = s.count;
     }
 
     return {
@@ -76,16 +44,16 @@ export const dashboardService = {
       receitaMes,
       receitaMesAnterior,
       variacaoReceita: Number(variacaoReceita.toFixed(1)),
-      totalOsMes: pagamentosMes._count.id,
-      pecasAbaixoMinimo: Number(pecasAbaixoMinimo[0]?.total ?? 0),
-      notaMedia: notaMedia._avg.nota ? Number(notaMedia._avg.nota.toFixed(1)) : null,
+      totalOsMes: pagamentosMes.total,
+      pecasAbaixoMinimo,
+      notaMedia: notaMedia != null ? Number(Number(notaMedia).toFixed(1)) : null,
       osRecentes: osRecentes.map((os) => ({
         id: os.id,
         status: os.status,
-        clienteNome: os.veiculo.cliente.nome,
-        veiculo: `${os.veiculo.marca} ${os.veiculo.modelo}`,
+        clienteNome: os.cliente_nome,
+        veiculo: `${os.veiculo_marca} ${os.veiculo_modelo}`,
         aberturaEm: os.aberturaEm,
-        total: os.pagamento ? Number(os.pagamento.valor_total) : 0,
+        total: os.pagamento_valor ? Number(os.pagamento_valor) : 0,
       })),
     };
   },

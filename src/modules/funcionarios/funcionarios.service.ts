@@ -1,68 +1,59 @@
-import { prisma } from "../../lib/prisma";
 import { AppError } from "../../lib/AppError";
+import { PG, isPgError } from "../../lib/db";
 import bcrypt from "bcryptjs";
 import { z } from "zod";
 import { criarFuncionarioSchema, atualizarFuncionarioSchema } from "./funcionarios.schema";
+import { funcionariosRepository } from "./funcionarios.repository";
 
 type CriarDto = z.infer<typeof criarFuncionarioSchema>;
 type AtualizarDto = z.infer<typeof atualizarFuncionarioSchema>;
 
 export const funcionariosService = {
   async criar(data: CriarDto) {
-    const { email, senha, ...funcionarioData } = data;
+    const { email, senha, data_admissao, ...funcionarioData } = data;
 
-    return prisma.$transaction(async (tx) => {
-      let usuarioId: string | undefined;
-
-      if (email && senha) {
-        const existente = await tx.usuario.findUnique({ where: { email } });
-        if (existente) throw new AppError("E-mail já cadastrado", 409);
-
-        const senha_hash = await bcrypt.hash(senha, 10);
-        const usuario = await tx.usuario.create({
-          data: { email, senha_hash, perfil: "ATENDENTE" },
-        });
-        usuarioId = usuario.id;
+    let novoUsuario: { email: string; senha_hash: string } | undefined;
+    if (email && senha) {
+      if (await funcionariosRepository.emailUsuarioExiste(email)) {
+        throw new AppError("E-mail já cadastrado", 409);
       }
+      novoUsuario = { email, senha_hash: await bcrypt.hash(senha, 10) };
+    }
 
-      return tx.funcionario.create({
-        data: {
+    try {
+      return await funcionariosRepository.criar(
+        {
           ...funcionarioData,
-          data_admissao: funcionarioData.data_admissao
-            ? new Date(funcionarioData.data_admissao)
-            : undefined,
-          usuarioId,
+          data_admissao: data_admissao ? new Date(data_admissao) : null,
         },
-        include: { usuario: { select: { email: true, perfil: true } } },
-      });
-    });
+        novoUsuario
+      );
+    } catch (error) {
+      if (isPgError(error, PG.UNIQUE_VIOLATION)) {
+        throw new AppError("E-mail já cadastrado", 409);
+      }
+      throw error;
+    }
   },
 
   async listar() {
-    return prisma.funcionario.findMany({
-      include: { usuario: { select: { email: true, perfil: true } } },
-      orderBy: { nome: "asc" },
-    });
+    return funcionariosRepository.listar();
   },
 
   async buscarPorId(id: string) {
-    const funcionario = await prisma.funcionario.findUnique({
-      where: { id },
-      include: { usuario: { select: { email: true, perfil: true } } },
-    });
+    const funcionario = await funcionariosRepository.buscarPorId(id);
     if (!funcionario) throw new AppError("Funcionário não encontrado", 404);
     return funcionario;
   },
 
   async atualizar(id: string, data: AtualizarDto) {
     await this.buscarPorId(id);
-    return prisma.funcionario.update({
-      where: { id },
-      data: {
-        ...data,
-        data_admissao: data.data_admissao ? new Date(data.data_admissao) : undefined,
-      },
-      include: { usuario: { select: { email: true, perfil: true } } },
+    const { data_admissao, ...rest } = data;
+    return funcionariosRepository.atualizar(id, {
+      ...rest,
+      ...(data_admissao !== undefined && {
+        data_admissao: data_admissao ? new Date(data_admissao) : null,
+      }),
     });
   },
 };

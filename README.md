@@ -7,36 +7,44 @@ API REST para sistema de agendamento de manutenção veicular.
 - **Runtime:** Node.js 20+
 - **Framework:** Fastify
 - **Linguagem:** TypeScript
-- **ORM:** Prisma 5
-- **Banco (dev):** SQLite
-- **Banco (prod):** PostgreSQL 16+
+- **Banco de dados:** PostgreSQL 16 (via Docker)
+- **Acesso a dados:** SQL puro com o driver [`pg`](https://node-postgres.com/) (sem ORM)
 - **Auth:** JWT
 - **Validação:** Zod
 - **Docs:** Swagger UI
 
+### Arquitetura em camadas
+
+```
+HTTP → routes → controller → service (regra de negócio) → repository (SQL) → db (pool pg) → PostgreSQL
+```
+
+- `*.controller.ts` — recebe a requisição, valida com Zod e chama o service.
+- `*.service.ts` — regra de negócio (validações, fluxos, permissões).
+- `*.repository.ts` — **todo o SQL** do módulo (SELECT/INSERT/UPDATE/DELETE).
+- `src/lib/db.ts` — pool de conexões, helper de transação (`withTransaction`) e tratamento de tipos.
+
 ## Pré-requisitos
 
-- Node.js 20+
-- npm 9+
+- Node.js 20+ e npm 9+
+- Docker + Docker Compose (para o PostgreSQL)
 
 ## Instalação e execução
 
 ```bash
-# 1. Clonar o repositório
-git clone https://github.com/Gabriellobo1/Oficina_arc_back.git
-cd Oficina_arc_back
-
-# 2. Instalar dependências
+# 1. Instalar dependências
 npm install
 
-# 3. Configurar variáveis de ambiente
+# 2. Configurar variáveis de ambiente
 cp .env.example .env
-# Editar o .env com seus valores
 
-# 4. Criar o banco e aplicar migrations
-npx prisma migrate dev
+# 3. Subir o PostgreSQL (Docker)
+docker compose up -d
 
-# 5. Popular com dados iniciais
+# 4. Criar as tabelas (aplica sql/schema.sql)
+npm run db:setup
+
+# 5. Popular com dados iniciais (seed)
 npm run db:seed
 
 # 6. Iniciar o servidor
@@ -46,36 +54,54 @@ npm run dev
 O servidor sobe em `http://localhost:3333`.
 Swagger UI disponível em `http://localhost:3333/api/docs`.
 
+> **Porta do banco:** o Docker expõe o PostgreSQL na porta **5433** do host
+> (para não conflitar com um Postgres já rodando na 5432). O `.env.example`
+> já vem configurado com essa porta.
+
+## Banco de dados (SQL)
+
+Não há ORM: o esquema e as consultas são SQL escrito à mão.
+
+| Onde | O quê |
+|---|---|
+| [sql/schema.sql](sql/schema.sql) | DDL do banco (CREATE TABLE, FKs, índices) — **fonte de verdade**, aplicado pelo `db:setup` |
+| [sql/schema.dump.sql](sql/schema.dump.sql) | Dump consolidado gerado via `pg_dump` (material de apoio) |
+| `src/modules/**/*.repository.ts` | Todas as consultas (SELECT/INSERT/UPDATE/DELETE) de cada módulo |
+| [src/lib/seed.ts](src/lib/seed.ts) | INSERTs dos dados iniciais |
+
+### Ver o SQL em execução / ao vivo
+
+```bash
+# Abrir um console SQL no banco:
+docker exec -it oficina_postgres psql -U oficina -d oficina
+
+# Dentro do psql:
+\dt                         -- lista as tabelas
+\d "Cliente"                -- estrutura de uma tabela
+SELECT * FROM "Cliente";    -- consulta os dados
+```
+
+Em modo desenvolvimento (`NODE_ENV=development`), o `db.ts` imprime no terminal
+cada query SQL executada pela API (prefixo `[SQL]`), útil para demonstrar o que
+roda a cada ação.
+
+Para regenerar o dump consolidado:
+
+```bash
+docker exec oficina_postgres pg_dump -U oficina --schema-only \
+  --no-owner --no-privileges oficina > sql/schema.dump.sql
+```
+
 ## Variáveis de ambiente
 
 | Variável | Descrição | Exemplo |
 |---|---|---|
-| `DATABASE_URL` | URL de conexão com o banco | `file:./dev.db` |
-| `JWT_SECRET` | Chave secreta do JWT (mín. 32 chars) | `sua_chave_secreta_aqui` |
+| `DATABASE_URL` | URL de conexão com o PostgreSQL | `postgresql://oficina:oficina@localhost:5433/oficina` |
+| `JWT_SECRET` | Chave secreta do JWT (mín. 32 chars) | `sua_chave_secreta_aqui...` |
 | `JWT_EXPIRES_IN` | Tempo de expiração do token | `7d` |
 | `PORT` | Porta do servidor | `3333` |
-| `FRONTEND_URL` | URL do frontend (CORS) | `http://localhost:5173` |
+| `FRONTEND_URL` | URL do frontend (CORS) | `http://localhost:3000` |
 | `NODE_ENV` | Ambiente | `development` |
-
-## Migrar para PostgreSQL
-
-1. Alterar `prisma/schema.prisma`:
-```prisma
-datasource db {
-  provider = "postgresql"
-  url      = env("DATABASE_URL")
-}
-```
-
-2. Atualizar `.env`:
-```env
-DATABASE_URL="postgresql://usuario:senha@localhost:5432/oficina"
-```
-
-3. Recriar migrations:
-```bash
-npx prisma migrate dev --name postgres_init
-```
 
 ## Usuários padrão (seed)
 
@@ -108,7 +134,7 @@ npx prisma migrate dev --name postgres_init
 | GET | /api/pecas | autenticado |
 | GET | /api/pecas/abaixo-estoque-minimo | autenticado |
 | POST | /api/pecas | gerente |
-| GET | /api/funcionarios | gerente |
+| GET | /api/funcionarios | autenticado |
 | POST | /api/funcionarios | gerente |
 | GET | /api/relatorios/receita-mensal | gerente |
 | GET | /api/relatorios/ranking-servicos | gerente |
@@ -118,11 +144,9 @@ npx prisma migrate dev --name postgres_init
 ## Scripts disponíveis
 
 ```bash
-npm run dev          # Servidor em modo watch
-npm run build        # Build para produção
-npm run start        # Iniciar build de produção
-npm run db:migrate   # Aplicar migrations
-npm run db:generate  # Gerar Prisma Client
-npm run db:studio    # Abrir Prisma Studio
-npm run db:seed      # Popular banco com dados iniciais
+npm run dev        # Servidor em modo watch
+npm run build      # Build para produção
+npm run start      # Iniciar build de produção
+npm run db:setup   # Cria as tabelas aplicando sql/schema.sql
+npm run db:seed    # Popula o banco com dados iniciais
 ```

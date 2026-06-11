@@ -7,4 +7,6 @@ export async function veiculosRoutes(app: FastifyInstance) {
   app.post("/", veiculosController.criar);
   app.get("/", veiculosController.listarPorCliente);
   app.get("/:placa", veiculosController.buscarPorPlaca);
+  app.put("/:id", veiculosController.atualizar);
+  app.delete("/:id", veiculosController.remover);
 }

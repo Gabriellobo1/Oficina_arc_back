@@ -15,6 +15,8 @@ import { pecasRoutes } from "./modules/pecas/pecas.routes";
 import { relatoriosRoutes } from "./modules/relatorios/relatorios.routes";
 import { tipoServicoRoutes } from "./modules/tipo-servico/tipo-servico.routes";
 import { dashboardRoutes } from "./modules/dashboard/dashboard.routes";
+import { pagamentosRoutes } from "./modules/pagamentos/pagamentos.routes";
+import { avaliacoesRoutes } from "./modules/avaliacoes/avaliacoes.routes";
 
 export const app = Fastify({ logger: env.NODE_ENV === "development" });
 
@@ -56,6 +58,8 @@ app.register(pecasRoutes, { prefix: "/api/pecas" });
 app.register(relatoriosRoutes, { prefix: "/api/relatorios" });
 app.register(tipoServicoRoutes, { prefix: "/api/tipo-servico" });
 app.register(dashboardRoutes, { prefix: "/api/dashboard" });
+app.register(pagamentosRoutes, { prefix: "/api/pagamentos" });
+app.register(avaliacoesRoutes, { prefix: "/api/avaliacoes" });
 
 app.setErrorHandler((error, _req, reply) => {
   if (error instanceof AppError) {

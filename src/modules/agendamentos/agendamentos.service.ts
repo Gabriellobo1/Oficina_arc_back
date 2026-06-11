@@ -1,6 +1,4 @@
-import { prisma } from "../../lib/prisma";
 import { AppError } from "../../lib/AppError";
-import { Prisma } from "@prisma/client";
 import { z } from "zod";
 import {
   criarAgendamentoSchema,
@@ -10,6 +8,8 @@ import {
   registrarPagamentoSchema,
   registrarAvaliacaoSchema,
 } from "./agendamentos.schema";
+import { agendamentosRepository } from "./agendamentos.repository";
+import { pecasRepository } from "../pecas/pecas.repository";
 
 type CriarDto = z.infer<typeof criarAgendamentoSchema>;
 type StatusDto = z.infer<typeof atualizarStatusSchema>;
@@ -21,16 +21,14 @@ type AvaliacaoDto = z.infer<typeof registrarAvaliacaoSchema>;
 export const agendamentosService = {
   async criar(data: CriarDto) {
     const { aberturaEm, ...rest } = data;
-    return prisma.agendamento.create({
-      data: {
-        ...rest,
-        ...(aberturaEm && { aberturaEm: new Date(aberturaEm) }),
-      },
+    return agendamentosRepository.criar({
+      ...rest,
+      ...(aberturaEm && { aberturaEm: new Date(aberturaEm) }),
     });
   },
 
   async atualizarStatus(id: string, data: StatusDto) {
-    const agendamento = await prisma.agendamento.findUnique({ where: { id } });
+    const agendamento = await agendamentosRepository.buscarPorId(id);
     if (!agendamento) throw new AppError("Agendamento não encontrado", 404);
 
     if (data.status === "CONCLUIDO") {
@@ -40,111 +38,68 @@ export const agendamentosService = {
       }
     }
 
-    return prisma.agendamento.update({
-      where: { id },
-      data: {
-        status: data.status,
-        km_saida: data.km_saida,
-        conclusaoEm: data.status === "CONCLUIDO" ? new Date() : undefined,
-      },
-    });
+    const fields: Record<string, unknown> = { status: data.status };
+    if (data.km_saida !== undefined) fields.km_saida = data.km_saida;
+    if (data.status === "CONCLUIDO") fields.conclusaoEm = new Date();
+
+    return agendamentosRepository.atualizarStatus(id, fields);
   },
 
   async listar(page: number, limit: number, status?: string, data?: string) {
-    const where: Prisma.AgendamentoWhereInput = {
-      ...(status && { status }),
-      ...(data && {
-        aberturaEm: {
-          gte: new Date(data),
-          lt: new Date(new Date(data).setDate(new Date(data).getDate() + 1)),
-        },
-      }),
-    };
-
-    const [registros, total] = await prisma.$transaction([
-      prisma.agendamento.findMany({
-        where,
-        skip: (page - 1) * limit,
-        take: limit,
-        orderBy: { criadoEm: "desc" },
-        include: {
-          veiculo: { select: { placa: true, modelo: true } },
-          _count: { select: { itensServico: true, itensPeca: true } },
-        },
-      }),
-      prisma.agendamento.count({ where }),
-    ]);
-
+    const { data: registros, total } = await agendamentosRepository.listar(page, limit, status, data);
     return { data: registros, meta: { page, limit, total, hasNextPage: page * limit < total } };
   },
 
   async buscarPorId(id: string) {
-    const agendamento = await prisma.agendamento.findUnique({
-      where: { id },
-      include: {
-        veiculo: { include: { cliente: true } },
-        itensServico: { include: { tipoServico: true, funcionario: true } },
-        itensPeca: { include: { peca: true } },
-        pagamento: true,
-        avaliacao: true,
-      },
-    });
+    const agendamento = await agendamentosRepository.buscarCompleto(id);
     if (!agendamento) throw new AppError("Agendamento não encontrado", 404);
     return agendamento;
   },
 
   async adicionarItemServico(agendamentoId: string, data: ItemServicoDto) {
-    const agendamento = await prisma.agendamento.findUnique({ where: { id: agendamentoId } });
+    const agendamento = await agendamentosRepository.buscarPorId(agendamentoId);
     if (!agendamento) throw new AppError("Agendamento não encontrado", 404);
     if (agendamento.status === "CONCLUIDO" || agendamento.status === "CANCELADO") {
       throw new AppError("Não é possível adicionar itens a uma OS encerrada", 400);
     }
-    return prisma.itemServico.create({ data: { agendamentoId, ...data } });
+    return agendamentosRepository.adicionarItemServico(agendamentoId, data);
   },
 
   async adicionarItemPeca(agendamentoId: string, data: ItemPecaDto) {
-    const agendamento = await prisma.agendamento.findUnique({ where: { id: agendamentoId } });
+    const agendamento = await agendamentosRepository.buscarPorId(agendamentoId);
     if (!agendamento) throw new AppError("Agendamento não encontrado", 404);
     if (agendamento.status === "CONCLUIDO" || agendamento.status === "CANCELADO") {
       throw new AppError("Não é possível adicionar itens a uma OS encerrada", 400);
     }
 
-    const peca = await prisma.peca.findUnique({ where: { id: data.pecaId } });
+    const peca = await pecasRepository.buscarPorId(data.pecaId);
     if (!peca) throw new AppError("Peça não encontrada", 404);
     if (peca.quantidade < data.quantidade) throw new AppError("Estoque insuficiente", 400);
 
-    return prisma.$transaction([
-      prisma.itemPeca.create({ data: { agendamentoId, ...data } }),
-      prisma.peca.update({
-        where: { id: data.pecaId },
-        data: { quantidade: { decrement: data.quantidade } },
-      }),
-    ]);
+    return agendamentosRepository.adicionarItemPeca(agendamentoId, data);
   },
 
   async registrarPagamento(agendamentoId: string, data: PagamentoDto) {
-    const agendamento = await prisma.agendamento.findUnique({
-      where: { id: agendamentoId },
-      include: { pagamento: true },
-    });
+    const agendamento = await agendamentosRepository.buscarPorId(agendamentoId);
     if (!agendamento) throw new AppError("Agendamento não encontrado", 404);
     if (agendamento.status !== "CONCLUIDO") {
       throw new AppError("Somente OS com status Concluído podem receber pagamento", 400);
     }
-    if (agendamento.pagamento) throw new AppError("OS já possui pagamento registrado", 409);
-    return prisma.pagamento.create({ data: { agendamentoId, ...data } });
+    if (await agendamentosRepository.pagamentoExiste(agendamentoId)) {
+      throw new AppError("OS já possui pagamento registrado", 409);
+    }
+    return agendamentosRepository.criarPagamento(agendamentoId, data);
   },
 
   async registrarAvaliacao(agendamentoId: string, data: AvaliacaoDto) {
-    const agendamento = await prisma.agendamento.findUnique({
-      where: { id: agendamentoId },
-      include: { avaliacao: true },
-    });
+    const agendamento = await agendamentosRepository.buscarPorId(agendamentoId);
     if (!agendamento) throw new AppError("Agendamento não encontrado", 404);
     if (agendamento.status !== "CONCLUIDO") {
       throw new AppError("Somente OS com status Concluído podem ser avaliadas", 400);
     }
-    if (agendamento.avaliacao) throw new AppError("OS já possui avaliação", 409);
-    return prisma.avaliacao.create({ data: { agendamentoId, ...data } });
+    if (await agendamentosRepository.avaliacaoExiste(agendamentoId)) {
+      throw new AppError("OS já possui avaliação", 409);
+    }
+    return agendamentosRepository.criarAvaliacao(agendamentoId, data);
   },
 };
